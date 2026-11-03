@@ -1,98 +1,85 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { Redirect } from 'expo-router';
+import { useAuth } from '@/features/auth';
+import { Role, AccountStatus } from '@unideliver/shared';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+export default function RoleRouterScreen() {
+  const { user, isLoading } = useAuth();
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
+  if (isLoading) {
     return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
+      <SafeAreaView style={styles.loadingContainer}>
+        <View style={styles.content}>
+          <Text style={styles.brandTitle}>UniDeliver</Text>
+          <Text style={styles.brandSubtitle}>Campus Food & Delivery</Text>
+          <ActivityIndicator size="large" color="#FF6B00" style={styles.spinner} />
+          <Text style={styles.loadingText}>Connecting to session...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+  // 1. Not authenticated -> Redirect to welcome
+  if (!user) {
+    return <Redirect href="/(auth)/welcome" />;
+  }
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+  // 2. Suspended account -> Redirect to suspended screen
+  if (user.status === AccountStatus.SUSPENDED) {
+    return <Redirect href="/account-suspended" />;
+  }
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+  // 3. New customer with incomplete profile -> Complete profile first
+  if (!user.profileComplete) {
+    return <Redirect href="/(auth)/complete-profile" />;
+  }
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
-  );
+  // 4. Role-based routing (Section 5.3)
+  if (user.role === Role.CUSTOMER) {
+    return <Redirect href="/(customer)/(tabs)/home" />;
+  }
+
+  if (user.role === Role.RIDER) {
+    return <Redirect href="/(rider)/(tabs)/available" />;
+  }
+
+  if (user.role === Role.ADMIN) {
+    return <Redirect href="/unsupported-role" />;
+  }
+
+  return <Redirect href="/(auth)/welcome" />;
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loadingContainer: {
     flex: 1,
+    backgroundColor: '#0F172A',
     justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
   },
-  heroSection: {
+  content: {
     alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
   },
-  title: {
-    textAlign: 'center',
+  brandTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
   },
-  code: {
-    textTransform: 'uppercase',
+  brandSubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 4,
+    fontWeight: '500',
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  spinner: {
+    marginTop: 32,
+  },
+  loadingText: {
+    marginTop: 16,
+    color: '#64748B',
+    fontSize: 13,
   },
 });

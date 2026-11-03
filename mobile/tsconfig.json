@@ -8,6 +8,12 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "@unideliver/shared": [
+        "../packages/shared/src/index.ts"
+      ],
+      "@unideliver/shared/*": [
+        "../packages/shared/src/*"
       ]
     }
   },
@@ -15,6 +21,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "../packages/shared/src/**/*"
   ]
 }
