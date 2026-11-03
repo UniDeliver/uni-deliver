@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@unideliver/shared": ["../packages/shared/src/index.ts"],
+      "@unideliver/shared/*": ["../packages/shared/src/*"]
     }
   },
   "include": [
