@@ -71,7 +71,7 @@ string in `MONGODB_URI` (step 4).
 ```bash
 git clone https://github.com/UniDeliver/uni-deliver.git
 cd uni-deliver
-git checkout feature/auth        # until auth is merged into main
+git checkout develop             # day-to-day work happens on develop (see branching below)
 
 # Install each part (order doesn't matter)
 cd packages/shared && npm install && cd ../..
@@ -79,6 +79,24 @@ cd backend         && npm install && cd ..
 cd admin           && npm install && cd ..
 cd mobile          && npm install && cd ..
 ```
+
+### Branching
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Stable, release-ready code. Only updated by merging `develop` for a release. |
+| `develop` | Integration branch. Every feature branch starts here and merges back here. |
+| `feature/<TASK-ID>-<short-name>` | Your work for one task, e.g. `feature/SAR-3-profiles`, `feature/UTH-2-cart`. |
+
+```bash
+git checkout develop
+git pull
+git checkout -b feature/SAR-3-profiles
+# ...commit your work...
+git push -u origin feature/SAR-3-profiles
+```
+
+Open a pull request **into `develop`** (not `main`) and ask your partner to review it. Don't approve your own PR.
 
 ---
 
