@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { forgotPasswordSchema, isEmailIdentifier } from '@unideliver/shared';
 import { useAuth } from '@/features/auth';
 import { fromApiError, validate } from '@/features/auth/form-errors';
@@ -154,7 +154,7 @@ function SegmentedToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) =
   }));
 
   const select = (m: Mode) => {
-    x.value = withSpring(m === 'email' ? 0 : 1, { damping: 18, stiffness: 220 });
+    x.value = withTiming(m === 'email' ? 0 : 1, { duration: 220, easing: Easing.out(Easing.cubic) });
     onChange(m);
   };
 

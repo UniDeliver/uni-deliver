@@ -23,6 +23,13 @@ interface Props {
   /** True once fonts are loaded and the saved session has been checked with the server. */
   ready: boolean;
   onFinish: () => void;
+  /**
+   * 'lift' (default): logo dips and the overlay zooms away to reveal the app.
+   * 'dissolve': the next screen starts on this exact frame (welcome), so only the speed lines
+   * fade out and the overlay is then removed at full opacity. Fading the whole overlay over an
+   * identical screen doubles shadows and dims the frame for a moment.
+   */
+  exit?: 'lift' | 'dissolve';
 }
 
 /**
@@ -31,7 +38,7 @@ interface Props {
  *   2. tagline rises in, amber speed lines streak past the logo while we wait
  *   3. once `ready`, the logo dips and the whole overlay lifts away to reveal the app
  */
-export function AnimatedSplash({ ready, onFinish }: Props) {
+export function AnimatedSplash({ ready, onFinish, exit: exitMode = 'lift' }: Props) {
   const { width, height } = useWindowDimensions();
   const circleSize = Math.hypot(width, height) * 1.1;
 
@@ -41,6 +48,7 @@ export function AnimatedSplash({ ready, onFinish }: Props) {
   const tagline = useSharedValue(0);
   const speed = useSharedValue(0);
   const exit = useSharedValue(0);
+  const linesOut = useSharedValue(0);
 
   const started = useRef(false);
 
@@ -68,6 +76,12 @@ export function AnimatedSplash({ ready, onFinish }: Props) {
 
   useEffect(() => {
     if (!ready || !introDone) return;
+    if (exitMode === 'dissolve') {
+      linesOut.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }, finished => {
+        if (finished) runOnJS(onFinish)();
+      });
+      return;
+    }
     logoScale.value = withSequence(
       withTiming(0.92, { duration: 140 }),
       withTiming(1.25, { duration: 420, easing: Easing.in(Easing.cubic) })
@@ -78,12 +92,14 @@ export function AnimatedSplash({ ready, onFinish }: Props) {
         if (finished) runOnJS(onFinish)();
       })
     );
-  }, [ready, introDone, exit, logoScale, onFinish]);
+  }, [ready, introDone, exit, linesOut, exitMode, logoScale, onFinish]);
 
+  const zoomOnExit = exitMode === 'lift';
   const containerStyle = useAnimatedStyle(() => ({
     opacity: 1 - exit.value,
-    transform: [{ scale: 1 + exit.value * 0.08 }],
+    transform: [{ scale: zoomOnExit ? 1 + exit.value * 0.08 : 1 }],
   }));
+  const linesStyle = useAnimatedStyle(() => ({ opacity: 1 - linesOut.value }));
   const circleStyle = useAnimatedStyle(() => ({ transform: [{ scale: circle.value }] }));
   const logoStyle = useAnimatedStyle(() => ({
     transform: [{ scale: logoScale.value }],
@@ -106,11 +122,11 @@ export function AnimatedSplash({ ready, onFinish }: Props) {
 
       <View style={styles.center}>
         <View style={styles.logoRow}>
-          <View style={styles.speedLines}>
+          <Animated.View style={[styles.speedLines, linesStyle]}>
             <SpeedLine progress={speed} offset={0} width={34} />
             <SpeedLine progress={speed} offset={0.33} width={22} />
             <SpeedLine progress={speed} offset={0.66} width={28} />
-          </View>
+          </Animated.View>
           <Animated.View style={[styles.logoCard, logoStyle]}>
             <Image
               source={require('@/assets/images/unideliver-logo.png')}

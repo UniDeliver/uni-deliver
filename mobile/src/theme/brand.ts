@@ -30,6 +30,8 @@ export const Font = {
   semibold: 'PlusJakartaSans_600SemiBold',
   bold: 'PlusJakartaSans_700Bold',
   extrabold: 'PlusJakartaSans_800ExtraBold',
+  /** Handwritten accent word in headlines (e.g. "campus" on welcome). */
+  script: 'Caveat_700Bold',
 } as const;
 
 export const Radius = {
@@ -40,8 +42,8 @@ export const Radius = {
 
 /** Shared motion timings so every screen feels the same. */
 export const Motion = {
-  stagger: 70,
-  enter: 420,
+  stagger: 40,
+  enter: 320,
   spring: { damping: 16, stiffness: 180, mass: 0.9 },
   press: { damping: 18, stiffness: 400 },
 } as const;

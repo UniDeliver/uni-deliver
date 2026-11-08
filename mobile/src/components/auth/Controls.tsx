@@ -7,7 +7,8 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 import { Brand, Font } from '@/theme/brand';
 
@@ -35,7 +36,7 @@ export function Checkbox({
   const progress = useSharedValue(checked ? 1 : 0);
 
   useEffect(() => {
-    progress.value = withSpring(checked ? 1 : 0, { damping: 14, stiffness: 260 });
+    progress.value = withTiming(checked ? 1 : 0, { duration: 180, easing: Easing.out(Easing.cubic) });
   }, [checked, progress]);
 
   const boxStyle = useAnimatedStyle(() => ({
@@ -44,7 +45,7 @@ export function Checkbox({
   }));
   const tickStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ scale: 0.4 + progress.value * 0.6 }],
+    transform: [{ scale: 0.7 + progress.value * 0.3 }],
   }));
 
   return (
@@ -71,7 +72,7 @@ export function FormBanner({ message, tone = 'error' }: { message?: string | nul
   const isError = tone === 'error';
   return (
     <Animated.View
-      entering={FadeInDown.springify().damping(16)}
+      entering={FadeInDown.duration(220).easing(Easing.out(Easing.cubic))}
       exiting={FadeOutUp.duration(150)}
       style={[styles.banner, isError ? styles.bannerError : styles.bannerInfo]}
       accessibilityLiveRegion="polite"

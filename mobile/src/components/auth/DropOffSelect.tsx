@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, FadeInRight } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown, FadeInRight } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DROP_OFF_POINTS } from '@unideliver/shared';
 import { Brand, Font } from '@/theme/brand';
@@ -43,7 +43,7 @@ export function DropOffSelect({ value, onChange, error }: Props) {
         </Animated.View>
 
         <Animated.View
-          entering={SlideInDown.springify().damping(18)}
+          entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
           exiting={SlideOutDown.duration(200)}
           style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
         >
@@ -54,7 +54,7 @@ export function DropOffSelect({ value, onChange, error }: Props) {
           {DROP_OFF_POINTS.map((point, i) => {
             const isSelected = point.id === value;
             return (
-              <Animated.View key={point.id} entering={FadeInRight.delay(60 + i * 40).springify().damping(18)}>
+              <Animated.View key={point.id} entering={FadeInRight.delay(40 + i * 30).duration(220).easing(Easing.out(Easing.cubic))}>
                 <Pressable
                   onPress={() => {
                     onChange(point.id);

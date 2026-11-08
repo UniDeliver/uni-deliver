@@ -1,14 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { AntDesign, Feather } from '@expo/vector-icons';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
 import { Brand, Font } from '@/theme/brand';
 import { PressableScale } from './PressableScale';
 
@@ -20,22 +12,8 @@ interface PrimaryButtonProps {
   icon?: 'chevron-right' | 'arrow-right';
 }
 
-/** Big green pill button. The arrow nudges forward on a loop to invite the tap. */
+/** Big green pill button. */
 export function PrimaryButton({ label, onPress, loading, disabled, icon = 'chevron-right' }: PrimaryButtonProps) {
-  const nudge = useSharedValue(0);
-
-  useEffect(() => {
-    nudge.value = withRepeat(
-      withSequence(
-        withTiming(4, { duration: 500, easing: Easing.out(Easing.quad) }),
-        withTiming(0, { duration: 500, easing: Easing.in(Easing.quad) }),
-        withTiming(0, { duration: 1200 })
-      ),
-      -1
-    );
-  }, [nudge]);
-
-  const arrowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: nudge.value }] }));
   const inactive = disabled || loading;
 
   return (
@@ -50,9 +28,7 @@ export function PrimaryButton({ label, onPress, loading, disabled, icon = 'chevr
       ) : (
         <View style={styles.row}>
           <Text style={styles.primaryText}>{label}</Text>
-          <Animated.View style={arrowStyle}>
-            <Feather name={icon} size={20} color="#fff" />
-          </Animated.View>
+          <Feather name={icon} size={20} color="#fff" />
         </View>
       )}
     </PressableScale>

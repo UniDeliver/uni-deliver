@@ -2,11 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import Animated, {
-  ZoomIn,
+  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { RESET_CODE_LENGTH, resetPasswordSchema } from '@unideliver/shared';
@@ -138,7 +137,7 @@ export default function ResetPasswordScreen() {
   );
 }
 
-/** Six boxes over one hidden TextInput. Filled digits pop in; errors shake the row. */
+/** Six boxes over one hidden TextInput. Filled digits fade in; errors shake the row. */
 function CodeInput({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: string }) {
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
@@ -150,7 +149,7 @@ function CodeInput({ value, onChange, error }: { value: string; onChange: (v: st
         withTiming(-8, { duration: 50 }),
         withTiming(8, { duration: 50 }),
         withTiming(-4, { duration: 50 }),
-        withSpring(0)
+        withTiming(0, { duration: 50 })
       );
     }
   }, [error, shake]);
@@ -170,7 +169,7 @@ function CodeInput({ value, onChange, error }: { value: string; onChange: (v: st
                 style={[styles.codeBox, active && styles.codeBoxActive, error ? styles.codeBoxError : null]}
               >
                 {digit ? (
-                  <Animated.Text entering={ZoomIn.springify().damping(12)} style={styles.codeDigit}>
+                  <Animated.Text entering={FadeIn.duration(120)} style={styles.codeDigit}>
                     {digit}
                   </Animated.Text>
                 ) : null}

@@ -1,16 +1,15 @@
-import { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { Easing, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Motion } from '@/theme/brand';
 
-/** Staggered entrance for the i-th block on a screen. */
+const settle = Easing.out(Easing.cubic);
+
+/** Staggered entrance for the i-th block on a screen: a short fade + drift, no spring overshoot. */
 export const enter = (i: number) =>
-  FadeInDown.delay(80 + i * Motion.stagger)
+  FadeInDown.delay(60 + i * Motion.stagger)
     .duration(Motion.enter)
-    .springify()
-    .damping(Motion.spring.damping)
-    .stiffness(Motion.spring.stiffness);
+    .easing(settle);
 
 export const enterUp = (i: number) =>
-  FadeInUp.delay(80 + i * Motion.stagger)
+  FadeInUp.delay(60 + i * Motion.stagger)
     .duration(Motion.enter)
-    .springify()
-    .damping(Motion.spring.damping);
+    .easing(settle);
