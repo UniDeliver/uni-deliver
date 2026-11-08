@@ -2,6 +2,7 @@ import { UserModel, IUser } from '../../models/user.model';
 import { Role, AccountStatus, UserDto, UpdateProfileInput, CreateRiderInput, UpdateUserStatusInput } from '@unideliver/shared';
 import { AppError } from '../../utils/errors';
 import { AuthService } from '../auth/auth.service';
+import { hashPassword } from '../../utils/password';
 
 export class UsersService {
   /**
@@ -13,6 +14,9 @@ export class UsersService {
     }
     if (input.email !== undefined) {
       user.email = input.email ? input.email.trim() : undefined;
+    }
+    if (input.dropOffPoint !== undefined) {
+      user.dropOffPoint = input.dropOffPoint;
     }
 
     await user.save();
@@ -48,7 +52,9 @@ export class UsersService {
     }
 
     const rider = new UserModel({
-      firebaseUid: null, // linked when rider first signs in with this phone
+      firebaseUid: null,
+      // Without an initial password the rider sets one via "Forgot password" on their phone number
+      passwordHash: input.password ? await hashPassword(input.password) : null,
       role: Role.RIDER,
       status: AccountStatus.ACTIVE,
       name: input.name,

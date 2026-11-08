@@ -12,6 +12,7 @@ const envSchema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8081,http://localhost:19006'),
   DEV_AUTH_BYPASS: z.string().optional().transform(val => val === 'true'),
+  JWT_SECRET: z.string().min(16).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -21,4 +22,12 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+if (parsed.data.NODE_ENV === 'production' && !parsed.data.JWT_SECRET) {
+  console.error('JWT_SECRET must be set in production.');
+  process.exit(1);
+}
+
+export const env = {
+  ...parsed.data,
+  JWT_SECRET: parsed.data.JWT_SECRET ?? 'unideliver-dev-only-jwt-secret-change-me',
+};

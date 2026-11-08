@@ -19,7 +19,7 @@ The app reads the user's **role from the auth response** and opens the matching 
 
 **Customer**
 
-- Sign up and log in with phone OTP
+- Sign up and log in with email or phone number + password; reset a forgotten password with a 6-digit code
 - Browse food outlets and menus, with search and filters
 - Cart with a clear cost breakdown (food cost + delivery fee)
 - Place orders (cash on delivery) with saved addresses and delivery instructions (hostel, building, room)
@@ -53,7 +53,7 @@ The app reads the user's **role from the auth response** and opens the matching 
 | Admin dashboard    | Next.js (App Router), TypeScript, Tailwind CSS                       |
 | Backend API        | Node.js, Express, TypeScript, Socket.IO                              |
 | Database           | MongoDB Atlas (Mongoose)                                             |
-| Authentication     | Firebase Authentication (phone OTP, email/password for admin)        |
+| Authentication     | API-issued JWT (mobile email/phone + password), Firebase (admin)    |
 | Push notifications | Firebase Cloud Messaging via Expo Notifications                      |
 | Validation         | zod (shared between all apps)                                        |
 | Hosting            | Render (API), Vercel (admin), EAS (mobile builds), MongoDB Atlas     |
@@ -157,7 +157,7 @@ npx expo prebuild          # first time only
 npx expo run:android       # or: eas build --profile development --platform android
 ```
 
-> Phone OTP uses `@react-native-firebase/auth`, so the mobile app needs a **development build**. It will not work in Expo Go.
+> The mobile app signs in through the API directly, so it works in Expo Go. Set `JWT_SECRET` in `backend/.env` (required in production).
 
 ---
 
@@ -165,8 +165,8 @@ npx expo run:android       # or: eas build --profile development --platform andr
 
 | Role       | App           | How the account is created                                                                    |
 | ---------- | ------------- | --------------------------------------------------------------------------------------------- |
-| `customer` | Mobile        | Self-registration with phone OTP                                                              |
-| `rider`    | Mobile        | Admin pre-creates the rider's phone number in the dashboard; the rider then signs in with OTP |
+| `customer` | Mobile        | Self-registration (name, email, phone, drop-off point, password)                              |
+| `rider`    | Mobile        | Admin pre-creates the rider; the rider sets a password via "Forgot password" and logs in      |
 | `admin`    | Web dashboard | Seed script only                                                                              |
 
 After login, the mobile app calls `GET /api/v1/auth/me` and opens:

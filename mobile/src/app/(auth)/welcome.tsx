@@ -1,224 +1,171 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect } from 'react';
+import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/features/auth';
-import { Role } from '@unideliver/shared';
+import Animated, {
+  Easing,
+  FadeIn,
+  ZoomIn,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import { Brand, Font } from '@/theme/brand';
+import { PrimaryButton, enter, enterUp } from '@/components/auth';
 
+/** Stitch: "Uni Deliver - Onboarding" */
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { signInWithDevToken } = useAuth();
-
-  const handleDevQuickLogin = async (role: Role, phone: string, name?: string) => {
-    try {
-      await signInWithDevToken(`uid-${Date.now().toString().slice(-4)}`, phone, role, name);
-      router.replace('/');
-    } catch (e: any) {
-      console.error('Quick login failed:', e);
-    }
-  };
+  const { width, height } = useWindowDimensions();
+  const heroSize = Math.min(width * 0.74, height * 0.36, 320);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.heroSection}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>SABARAGAMUWA UNIVERSITY</Text>
-          </View>
-          <Text style={styles.title}>
-            Hot meals delivered to your <Text style={styles.highlight}>hostel door.</Text>
-          </Text>
-          <Text style={styles.subtitle}>
-            Order from Belihuloya and Pambahinna restaurants with zero cash friction.
-          </Text>
-        </View>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.container}>
+        <Animated.View entering={enter(0)} style={styles.logoWrap}>
+          <Image
+            source={require('@/assets/images/unideliver-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="Uni Delivery"
+          />
+        </Animated.View>
 
-        <View style={styles.illustrationCard}>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>🍔</Text>
-            <View>
-              <Text style={styles.featureTitle}>Favorite Outlets</Text>
-              <Text style={styles.featureDesc}>Campus cafeterias & local spots</Text>
-            </View>
-          </View>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>⚡</Text>
-            <View>
-              <Text style={styles.featureTitle}>Fast Delivery</Text>
-              <Text style={styles.featureDesc}>By verified student riders</Text>
-            </View>
-          </View>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>💵</Text>
-            <View>
-              <Text style={styles.featureTitle}>Cash on Delivery</Text>
-              <Text style={styles.featureDesc}>Simple & reliable payment</Text>
-            </View>
+        <View style={styles.headline}>
+          <Animated.Text entering={enter(1)} style={styles.headlineText}>
+            Campus life,
+          </Animated.Text>
+          <View style={styles.headlineRow}>
+            <Animated.Text entering={enter(2)} style={styles.headlineText}>
+              delivered
+            </Animated.Text>
+            <Animated.View entering={ZoomIn.delay(520).springify().damping(9)} style={styles.dot} />
           </View>
         </View>
 
-        <View style={styles.actionSection}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.push('/(auth)/phone-login')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.primaryButtonText}>Continue with Phone Number</Text>
-          </TouchableOpacity>
+        <Hero size={heroSize} />
 
-          {/* Quick Dev Switcher for pairing/testing */}
-          <View style={styles.devSection}>
-            <Text style={styles.devHeader}>DEVELOPMENT FAST-LOGIN</Text>
-            <View style={styles.devButtonsRow}>
-              <TouchableOpacity
-                style={[styles.devButton, { borderColor: '#3B82F6' }]}
-                onPress={() => handleDevQuickLogin(Role.CUSTOMER, '+94771234567', 'Nimal Customer')}
-              >
-                <Text style={styles.devButtonText}>Customer</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.devButton, { borderColor: '#10B981' }]}
-                onPress={() => handleDevQuickLogin(Role.RIDER, '+94779998888', 'Sunil Rider')}
-              >
-                <Text style={styles.devButtonText}>Rider</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.devButton, { borderColor: '#F59E0B' }]}
-                onPress={() => handleDevQuickLogin(Role.CUSTOMER, '+94770001111', '')}
-              >
-                <Text style={styles.devButtonText}>New User</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
+        <Animated.Text entering={enter(5)} style={styles.subtitle}>
+          Food and essentials from{'\n'}town to campus.
+        </Animated.Text>
+
+        <Animated.View entering={enterUp(6)} style={styles.actions}>
+          <PrimaryButton label="Get started" onPress={() => router.push('/(auth)/register')} />
+          <Pressable onPress={() => router.push('/(auth)/login')} hitSlop={12} style={styles.secondary}>
+            <Text style={styles.secondaryText}>I already have an account</Text>
+          </Pressable>
+        </Animated.View>
+      </View>
     </SafeAreaView>
   );
 }
 
+/** Food photo in a soft circle that floats, with amber "sun rays" that pulse. */
+function Hero({ size }: { size: number }) {
+  const float = useSharedValue(0);
+  const rays = useSharedValue(0);
+
+  useEffect(() => {
+    float.value = withRepeat(
+      withSequence(
+        withTiming(-8, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1
+    );
+    rays.value = withDelay(
+      700,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) }),
+          withTiming(0.35, { duration: 900, easing: Easing.in(Easing.quad) })
+        ),
+        -1
+      )
+    );
+  }, [float, rays]);
+
+  const floatStyle = useAnimatedStyle(() => ({ transform: [{ translateY: float.value }] }));
+  const raysStyle = useAnimatedStyle(() => ({
+    opacity: rays.value,
+    transform: [{ scale: 0.92 + rays.value * 0.08 }],
+  }));
+
+  return (
+    <View style={[styles.heroArea, { height: size + 24 }]}>
+      <Animated.View entering={ZoomIn.delay(260).springify().damping(14)} style={floatStyle}>
+        <View style={[styles.heroHalo, { width: size, height: size, borderRadius: size / 2 }]}>
+          <Image
+            source={require('@/assets/images/onboarding-hero.png')}
+            style={{ width: size - 16, height: size - 16, borderRadius: (size - 16) / 2 }}
+            resizeMode="cover"
+            accessibilityLabel="Burger and fries"
+          />
+        </View>
+        <Animated.View
+          entering={FadeIn.delay(700)}
+          style={[styles.rays, { top: size * 0.02, right: -size * 0.06 }, raysStyle]}
+          pointerEvents="none"
+        >
+          <View style={[styles.ray, { transform: [{ rotate: '-55deg' }] }]} />
+          <View style={[styles.ray, { transform: [{ rotate: '-20deg' }], marginLeft: 18, marginTop: 8 }]} />
+        </Animated.View>
+      </Animated.View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#FAF7F0' },
   container: {
     flex: 1,
-    backgroundColor: '#0B0F19',
-  },
-  scrollContent: {
-    flexGrow: 1,
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingBottom: 12,
   },
-  heroSection: {
-    marginTop: 20,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 107, 0, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 0, 0.3)',
-    marginBottom: 16,
-  },
-  badgeText: {
-    color: '#FF7A1A',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 42,
-    letterSpacing: -0.5,
-  },
-  highlight: {
-    color: '#FF6B00',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#94A3B8',
-    marginTop: 12,
-    lineHeight: 22,
-  },
-  illustrationCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 20,
-    marginVertical: 24,
-    gap: 16,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  featureIcon: {
-    fontSize: 24,
-  },
-  featureTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F1F5F9',
-  },
-  featureDesc: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  actionSection: {
-    gap: 16,
-    marginBottom: 10,
-  },
-  primaryButton: {
-    backgroundColor: '#FF6B00',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    shadowColor: '#FF6B00',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  devSection: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  devHeader: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 1,
-    marginBottom: 8,
+  logoWrap: { marginTop: 12 },
+  logo: { width: 120, height: 80 },
+  headline: { alignItems: 'center' },
+  headlineRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  headlineText: {
+    fontFamily: Font.extrabold,
+    fontSize: 42,
+    lineHeight: 46,
+    letterSpacing: -1.4,
+    color: '#083E2D',
     textAlign: 'center',
   },
-  devButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  devButton: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+  dot: { width: 12, height: 12, backgroundColor: Brand.amber, marginLeft: 3, marginBottom: 9, borderRadius: 2 },
+  heroArea: { alignItems: 'center', justifyContent: 'center' },
+  heroHalo: {
+    backgroundColor: '#FDE7B8',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    justifyContent: 'center',
+    shadowColor: '#8A5A00',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 6,
   },
-  devButtonText: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    fontWeight: '600',
+  rays: { position: 'absolute' },
+  ray: { width: 8, height: 26, borderRadius: 4, backgroundColor: Brand.amber },
+  subtitle: {
+    fontFamily: Font.regular,
+    fontSize: 17,
+    lineHeight: 25,
+    color: '#24282B',
+    textAlign: 'center',
+  },
+  actions: { alignSelf: 'stretch', gap: 14 },
+  secondary: { alignSelf: 'center', paddingVertical: 4 },
+  secondaryText: {
+    fontFamily: Font.bold,
+    fontSize: 15,
+    color: '#083E2D',
+    textDecorationLine: 'underline',
   },
 });

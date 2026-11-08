@@ -16,6 +16,14 @@ export class AppError extends Error {
     return new AppError('UNAUTHENTICATED', 401, message);
   }
 
+  static badRequest(message = 'Bad request', details: unknown = null): AppError {
+    return new AppError('BAD_REQUEST', 400, message, details);
+  }
+
+  static invalidCredentials(message = 'Incorrect email/phone or password.'): AppError {
+    return new AppError('INVALID_CREDENTIALS', 401, message);
+  }
+
   static forbidden(message = 'Access forbidden'): AppError {
     return new AppError('FORBIDDEN', 403, message);
   }
@@ -34,6 +42,10 @@ export class AppError extends Error {
 
   static conflict(code: string, message: string): AppError {
     return new AppError(code, 409, message);
+  }
+
+  static tooManyRequests(message = 'Too many requests. Please try again later.'): AppError {
+    return new AppError('RATE_LIMITED', 429, message);
   }
 
   static internal(message = 'An unexpected internal error occurred'): AppError {

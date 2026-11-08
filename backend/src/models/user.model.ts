@@ -17,6 +17,12 @@ export interface IRiderDetails {
   isAvailable: boolean;
 }
 
+export interface IPasswordReset {
+  codeHash: string;
+  expiresAt: Date;
+  attempts: number;
+}
+
 export interface IUser extends Document {
   firebaseUid: string | null;
   role: Role;
@@ -24,6 +30,12 @@ export interface IUser extends Document {
   name: string;
   phone: string;
   email?: string;
+  /** scrypt hash. Never selected by default; use `.select('+passwordHash')`. */
+  passwordHash?: string | null;
+  /** Pending password-reset code. Never selected by default. */
+  passwordReset?: IPasswordReset | null;
+  /** Primary campus drop-off point id (DROP_OFF_POINTS in @unideliver/shared). */
+  dropOffPoint?: string | null;
   addresses: IUserAddress[];
   rider?: IRiderDetails;
   pushTokens: string[];
@@ -57,8 +69,6 @@ const UserSchema = new Schema<IUser>(
     firebaseUid: {
       type: String,
       default: null,
-      sparse: true,
-      index: true,
     },
     role: {
       type: String,
@@ -88,7 +98,27 @@ const UserSchema = new Schema<IUser>(
       type: String,
       trim: true,
       lowercase: true,
-      sparse: true,
+    },
+    passwordHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordReset: {
+      type: new Schema<IPasswordReset>(
+        {
+          codeHash: { type: String, required: true },
+          expiresAt: { type: Date, required: true },
+          attempts: { type: Number, default: 0 },
+        },
+        { _id: false }
+      ),
+      default: null,
+      select: false,
+    },
+    dropOffPoint: {
+      type: String,
+      default: null,
     },
     addresses: {
       type: [AddressSchema],
@@ -109,8 +139,11 @@ const UserSchema = new Schema<IUser>(
 );
 
 // Indexes matching architecture.md:
-// { firebaseUid: 1 } unique sparse, { phone: 1 } unique, { role: 1, status: 1 }
-UserSchema.index({ firebaseUid: 1 }, { unique: true, sparse: true });
+// { firebaseUid: 1 } unique partial, { phone: 1 } unique, { email: 1 } unique partial, { role: 1, status: 1 }
+// Partial (not sparse): password-only users store firebaseUid: null, and sparse indexes still index nulls
+UserSchema.index({ firebaseUid: 1 }, { unique: true, partialFilterExpression: { firebaseUid: { $type: 'string' } } });
 UserSchema.index({ role: 1, status: 1 });
+// Email is optional but is a login identifier, so it must be unique when present
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } });
 
 export const UserModel = mongoose.model<IUser>('User', UserSchema);

@@ -1,244 +1,139 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { UserDto, Role, AccountStatus } from '@unideliver/shared';
-import { authApi } from '../../api/auth.api';
-import { setAuthTokenProvider, setOnUnauthorized } from '../../api/client';
-import { Platform } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  AuthTokenResponse,
+  ForgotPasswordResponse,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+  UserDto,
+} from '@unideliver/shared';
+import { authApi } from '@/api/auth.api';
+import { setAuthTokenProvider, setOnUnauthorized } from '@/api/client';
+import { tokenStorage } from '@/lib/token-storage';
 
 interface AuthContextType {
+  /** Authoritative user from the server. Routing uses `user.role` (architecture.md 5.3). */
   user: UserDto | null;
-  idToken: string | null;
+  /** True only while the saved session is restored on app start. */
   isLoading: boolean;
-  error: string | null;
-  signInWithDevToken: (uid: string, phone: string, role?: Role, name?: string) => Promise<UserDto>;
-  sendPhoneOtp: (phoneNumber: string) => Promise<{ verificationId: string }>;
-  confirmPhoneOtp: (verificationId: string, code: string, phone?: string) => Promise<UserDto>;
-  completeProfile: (name: string, email?: string) => Promise<UserDto>;
-  signOut: () => Promise<void>;
+  signIn: (input: LoginInput) => Promise<UserDto>;
+  register: (input: RegisterInput) => Promise<UserDto>;
+  requestPasswordReset: (identifier: string) => Promise<ForgotPasswordResponse>;
+  resetPassword: (input: ResetPasswordInput) => Promise<UserDto>;
+  completeProfile: (name: string, dropOffPoint?: string) => Promise<UserDto>;
   refreshUser: () => Promise<UserDto | null>;
-  clearError: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY_TOKEN = 'unideliver_auth_token';
-
-// Simple cross-platform storage helper
-const storage = {
-  getItem: (key: string): string | null => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage.getItem(key);
-    }
-    return (globalThis as any)[key] || null;
-  },
-  setItem: (key: string, value: string): void => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(key, value);
-    }
-    (globalThis as any)[key] = value;
-  },
-  removeItem: (key: string): void => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.removeItem(key);
-    }
-    delete (globalThis as any)[key];
-  },
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserDto | null>(null);
-  const [idToken, setIdToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const tokenRef = useRef<string | null>(null);
 
-  // Configure token provider for API client
-  useEffect(() => {
-    setAuthTokenProvider(async () => {
-      return idToken || storage.getItem(STORAGE_KEY_TOKEN);
-    });
-
-    setOnUnauthorized(() => {
-      console.warn('[AuthProvider] 401 Unauthorized received, signing out...');
-      signOut();
-    });
-  }, [idToken]);
-
-  // Load existing session on start (Section 5.3)
-  useEffect(() => {
-    async function loadSession() {
-      try {
-        const savedToken = storage.getItem(STORAGE_KEY_TOKEN);
-        if (savedToken) {
-          setIdToken(savedToken);
-          // Call GET /api/v1/auth/me to verify user & load authoritative role from server
-          const response = await authApi.getMe();
-          setUser(response.user);
-        }
-      } catch (err: any) {
-        console.warn('[AuthProvider] Failed to restore session:', err?.message || err);
-        storage.removeItem(STORAGE_KEY_TOKEN);
-        setIdToken(null);
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    loadSession();
+  const signOut = useCallback(async () => {
+    tokenRef.current = null;
+    setUser(null);
+    await tokenStorage.clear();
   }, []);
 
-  const clearError = useCallback(() => setError(null), []);
+  useEffect(() => {
+    setAuthTokenProvider(async () => tokenRef.current);
+    setOnUnauthorized(() => {
+      console.warn('[AuthProvider] Session expired, signing out');
+      void signOut();
+    });
+  }, [signOut]);
 
-  const refreshUser = useCallback(async (): Promise<UserDto | null> => {
+  // Restore session: saved token → GET /auth/me → role from the server (never from cache)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = await tokenStorage.get();
+        if (!saved) return;
+        tokenRef.current = saved;
+        const { user: me } = await authApi.getMe();
+        if (!cancelled) setUser(me);
+      } catch (err: any) {
+        console.warn('[AuthProvider] Could not restore session:', err?.message ?? err);
+        tokenRef.current = null;
+        await tokenStorage.clear();
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Stores the session; persists the token only when `remember` is true. */
+  const startSession = useCallback(async (res: AuthTokenResponse, remember: boolean) => {
+    tokenRef.current = res.token;
+    if (remember) await tokenStorage.set(res.token);
+    else await tokenStorage.clear();
+    setUser(res.user);
+    return res.user;
+  }, []);
+
+  const signIn = useCallback(
+    async (input: LoginInput) => startSession(await authApi.login(input), Boolean(input.rememberMe)),
+    [startSession]
+  );
+
+  const register = useCallback(
+    async (input: RegisterInput) => startSession(await authApi.register(input), true),
+    [startSession]
+  );
+
+  const requestPasswordReset = useCallback(
+    (identifier: string) => authApi.forgotPassword({ identifier }),
+    []
+  );
+
+  const resetPassword = useCallback(
+    async (input: ResetPasswordInput) => startSession(await authApi.resetPassword(input), true),
+    [startSession]
+  );
+
+  const completeProfile = useCallback(async (name: string, dropOffPoint?: string) => {
+    const { user: updated } = await authApi.updateMe({ name, dropOffPoint: dropOffPoint as any });
+    setUser(updated);
+    return updated;
+  }, []);
+
+  const refreshUser = useCallback(async () => {
     try {
-      const response = await authApi.getMe();
-      setUser(response.user);
-      return response.user;
-    } catch (err: any) {
-      console.error('[AuthProvider] refreshUser failed:', err);
+      const { user: me } = await authApi.getMe();
+      setUser(me);
+      return me;
+    } catch {
       return null;
     }
   }, []);
 
-  /**
-   * Fast dev sign-in helper for development and testing
-   * Creates or links user via dev token
-   */
-  const signInWithDevToken = useCallback(
-    async (uid: string, phone: string, role = Role.CUSTOMER, name?: string): Promise<UserDto> => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const token = `dev:${uid}:${phone}:${role}`;
-        storage.setItem(STORAGE_KEY_TOKEN, token);
-        setIdToken(token);
-
-        const response = await authApi.session(token);
-        let currentUser = response.user;
-
-        // If a name was passed and profile is incomplete, automatically update
-        if (name && !currentUser.profileComplete) {
-          const updated = await authApi.updateMe({ name });
-          currentUser = updated.user;
-        }
-
-        setUser(currentUser);
-        return currentUser;
-      } catch (err: any) {
-        const msg = err?.message || 'Dev sign in failed';
-        setError(msg);
-        storage.removeItem(STORAGE_KEY_TOKEN);
-        setIdToken(null);
-        throw err;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
+  const value = useMemo(
+    () => ({
+      user,
+      isLoading,
+      signIn,
+      register,
+      requestPasswordReset,
+      resetPassword,
+      completeProfile,
+      refreshUser,
+      signOut,
+    }),
+    [user, isLoading, signIn, register, requestPasswordReset, resetPassword, completeProfile, refreshUser, signOut]
   );
 
-  /**
-   * Send Phone OTP
-   */
-  const sendPhoneOtp = useCallback(async (phoneNumber: string): Promise<{ verificationId: string }> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // In mobile app, phone OTP is backed by Firebase Auth
-      // Returns a verification ID
-      const verificationId = `v_${Date.now()}_${phoneNumber.replace(/\+/g, '')}`;
-      return { verificationId };
-    } catch (err: any) {
-      setError(err?.message || 'Failed to send OTP');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * Confirm Phone OTP and authenticate with backend POST /api/v1/auth/session
-   */
-  const confirmPhoneOtp = useCallback(
-    async (verificationId: string, code: string, phone = '+94771234567'): Promise<UserDto> => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Construct token (in live Firebase, this is the Firebase ID token obtained from user credential)
-        const token = `dev:${verificationId}:${phone}`;
-        storage.setItem(STORAGE_KEY_TOKEN, token);
-        setIdToken(token);
-
-        const response = await authApi.session(token);
-        setUser(response.user);
-        return response.user;
-      } catch (err: any) {
-        setError(err?.message || 'Invalid OTP code');
-        throw err;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
-
-  /**
-   * Complete customer profile with name and optional email
-   */
-  const completeProfile = useCallback(async (name: string, email?: string): Promise<UserDto> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await authApi.updateMe({ name, email });
-      setUser(response.user);
-      return response.user;
-    } catch (err: any) {
-      setError(err?.message || 'Failed to complete profile');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * Logout (Section 5.5, SR07): Clear session, reset storage, clear state
-   */
-  const signOut = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
-    try {
-      storage.removeItem(STORAGE_KEY_TOKEN);
-      setIdToken(null);
-      setUser(null);
-      setError(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        idToken,
-        isLoading,
-        error,
-        signInWithDevToken,
-        sendPhoneOtp,
-        confirmPhoneOtp,
-        completeProfile,
-        signOut,
-        refreshUser,
-        clearError,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-export function useAuth(): AuthContextType {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
-}
+};

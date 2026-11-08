@@ -58,7 +58,8 @@ export async function apiClient<T>(
   const data: ApiResponse<T> = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    if (response.status === 401 && onUnauthorizedCallback) {
+    // Only an authenticated request means "session expired"; a 401 from /auth/login is just a wrong password
+    if (response.status === 401 && !options.skipAuth && onUnauthorizedCallback) {
       onUnauthorizedCallback();
     }
 

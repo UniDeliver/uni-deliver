@@ -16,7 +16,7 @@
 | Admin web | Next.js (App Router) + TypeScript                                                                                                                                                               |
 | Backend   | Node.js + Express + TypeScript, REST API under `/api/v1` and Socket.IO for realtime                                                                                                             |
 | Database  | MongoDB Atlas via Mongoose                                                                                                                                                                      |
-| Auth      | Firebase Authentication (identity) and a MongoDB `users` record (role and profile)                                                                                                              |
+| Auth      | Mobile: email **or** phone + password, verified by the backend, which issues its own session JWT. Admin web: Firebase Authentication. Role and profile always come from MongoDB `users`.      |
 | Push      | Firebase Cloud Messaging (via Expo Notifications for device tokens)                                                                                                                             |
 | Payment   | **Cash on Delivery only.** No payment gateway.                                                                                                                                                  |
 | Hosting   | API: Render. Admin: Vercel. Mobile builds: EAS. DB: MongoDB Atlas.                                                                                                                              |
@@ -58,7 +58,7 @@ Online payments, iOS App Store publication, outlet-facing app, live GPS rider tr
 │          └──── Role Router ┘        │                     │
 └──────────────────┬──────────────────┘                     │
                    │ HTTPS REST + Socket.IO (WSS)           │
-                   │ Authorization: Bearer <Firebase ID token>
+                   │ Authorization: Bearer <session JWT>  (admin: Firebase ID token)
                    ▼                                        ▼
         ┌─────────────────────────────────────────────────────────┐
         │           Backend API: Node.js + Express (Render)       │
@@ -152,33 +152,34 @@ All request bodies are defined as **zod** schemas in `packages/shared/src/schema
 
 ### 5.1 Identity vs. authorization
 
-- **Firebase Authentication** owns identity: phone number + OTP (primary for customers and riders) and optionally email/password. Firebase handles password hashing (SR02), OTP and brute-force throttling (SR09).
-- **MongoDB `users` collection** owns authorization and profile: `role`, `status`, name, addresses, push tokens.
-- The backend trusts **only** a verified Firebase ID token, then loads the user from MongoDB. The role in MongoDB is the source of truth. Optionally it is mirrored into a Firebase custom claim (`role`) for convenience, but the server never trusts the claim alone.
-
-> Note: the proposal mentions both JWT and Firebase Auth. Firebase ID tokens **are** JWTs (RFC 7519). No separate custom JWT system is built.
+- **Mobile app (customers and delivery agents)** signs in with **email or Sri Lankan mobile number + password** (Stitch auth screens: Onboarding, Login, Registration, Forgot Password). The backend owns these credentials:
+  - Passwords are hashed with **scrypt** (Node `crypto`, per-user random salt) in `users.passwordHash` (`select: false`). Plain passwords are never stored or logged (SR02).
+  - On success the backend issues a **session JWT** (HS256, `iss: unideliver-api`, `sub: <user _id>`). Lifetime: 1 day, or 30 days with "Remember me".
+- **Admin web** keeps **Firebase Authentication** (email/password). `authenticate` accepts both token types: a backend JWT is checked first, otherwise the token is verified as a Firebase ID token and the user is loaded by `firebaseUid`. Firebase is also the planned path for Google sign-in (see 5.6).
+- **MongoDB `users` collection** owns authorization and profile: `role`, `status`, name, drop-off point, addresses, push tokens.
+- **The role in MongoDB is the only source of truth.** The JWT carries `role` for debugging, but `authenticate` reloads the user on every request and `authorize()` checks the database value.
 
 ### 5.2 Account creation rules
 
 | Role       | How it is created                                                                                                                                                                                         |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `customer` | Self-registration in the mobile app. Backend creates the user with `role: customer`.                                                                                                                      |
-| `rider`    | **Admin creates** the rider in the dashboard (phone number). When that phone signs in on the mobile app, the backend links the Firebase UID to the pre-created rider record. Riders cannot self-register. |
+| `customer` | Self-registration in the mobile app (`POST /auth/register`: name, email, phone, primary drop-off point, password, terms). Backend creates the user with `role: customer`.                                |
+| `rider`    | **Admin creates** the rider in the dashboard (name, phone, vehicleNo, optional initial password). Without a password, the rider opens **Forgot password → Phone Number** in the app to set one, then logs in on the same login screen as customers. Riders cannot self-register (registering with a rider's phone returns `409 PHONE_ALREADY_EXISTS`). |
 | `admin`    | Seeded by script (`apps/api/scripts/seed-admin.ts`). Never creatable via public API.                                                                                                                      |
 
 ### 5.3 Login sequence (mobile)
 
 ```
-Mobile App                    Firebase Auth              Backend API             MongoDB
-    │  signInWithPhoneNumber() ──►│                           │                     │
-    │◄── confirm OTP / idToken ───│                           │                     │
-    │  POST /api/v1/auth/session  (Bearer idToken) ──────────►│                     │
-    │                             │   verifyIdToken() ◄───────│                     │
-    │                             │                           │ find by firebaseUid │
-    │                             │                           │ or phone (rider     │
-    │                             │                           │ link) or create     │
-    │                             │                           │ customer ─────────► │
-    │◄──── 200 { user: { id, name, role, status, ... } } ─────│                     │
+Mobile App                                     Backend API                         MongoDB
+    │  POST /api/v1/auth/login                      │                                  │
+    │  { identifier, password, rememberMe } ───────►│ zod validate, rate limit         │
+    │                                               │ find by email or phone ─────────►│
+    │                                               │ scrypt verify passwordHash       │
+    │◄── 200 { user: { id, role, status, ... },    │ sign JWT (sub = user id)         │
+    │          token, expiresIn } ──────────────────│                                  │
+    │  store token (SecureStore if "Remember me")   │                                  │
+    │                                               │                                  │
+    │  (register / password reset return the same shape and sign the user in)          │
     │
     │  RoleRouter: role === 'customer' → /(customer)/home
     │              role === 'rider'    → /(rider)/available
@@ -186,7 +187,7 @@ Mobile App                    Firebase Auth              Backend API            
     │              status === 'suspended' → /account-suspended
 ```
 
-**Auth response contract** (`POST /auth/session` and `GET /auth/me` return the same shape):
+**Auth response contract.** `register`, `login` and `password/reset` return `{ user, token, expiresIn }`. `GET /auth/me` and `POST /auth/session` return `{ user }`. `user` always has this shape:
 
 ```json
 {
@@ -196,26 +197,40 @@ Mobile App                    Firebase Auth              Backend API            
     "status": "active",
     "name": "Kasun Perera",
     "phone": "+94771234567",
-    "email": null,
-    "profileComplete": true
-  }
+    "email": "kasun@example.com",
+    "profileComplete": true,
+    "dropOffPoint": "hostel-c"
+  },
+  "token": "<session JWT>",
+  "expiresIn": 86400
 }
 ```
 
-- If `profileComplete === false` (new customer), route to `/(auth)/complete-profile` before the role home.
-- On app start, if a Firebase session exists, call `GET /auth/me` and route the same way. Never route from cached role alone; use the cached role only to render a splash while `/auth/me` resolves.
+**Auth error codes the app handles:** `INVALID_CREDENTIALS` (401, same message whether or not the account exists), `PASSWORD_NOT_SET` (401, pre-created rider: the app offers "Set my password now"), `EMAIL_ALREADY_EXISTS` / `PHONE_ALREADY_EXISTS` (409), `VALIDATION_ERROR` (422, `details[]` mapped onto form fields), `RATE_LIMITED` (429).
+
+- All successful auth actions route through **one place**: the `(auth)` layout sees `user` set and redirects to `/`, and `app/index.tsx` (RoleRouter) picks the home from `user.role`. Screens never navigate to a role home themselves.
+- If `profileComplete === false` (e.g. an account created via Firebase without a name), route to `/(auth)/complete-profile` before the role home.
+- On app start, if a saved token exists, call `GET /auth/me` and route the same way. Never route from a cached role. The animated splash (5.6) covers the screen until `/auth/me` resolves.
+
+**Password recovery** (`forgot-password` → `reset-password`):
+
+1. `POST /auth/password/forgot { identifier }` always returns the same message (no account discovery). If the account exists, a 6-digit code is stored as a SHA-256 hash with a 10-minute expiry and a 5-attempt limit.
+2. `POST /auth/password/reset { identifier, code, newPassword, confirmPassword }` checks the code, sets the new password, clears the code (single use) and returns a session like login.
+3. **Delivery is not implemented yet.** No SMS or email provider is configured. Outside production the API logs the code and returns it as `devCode`, and the app shows it in a banner. Production logs a warning and the user receives nothing until a provider is added (TODO in `auth.service.ts`).
 
 ### 5.4 Mobile route structure (Expo Router)
 
 ```
 apps/mobile/app/
-├── _layout.tsx                 # Providers: QueryClient, AuthProvider, Socket, Theme
+├── _layout.tsx                 # Fonts, AuthProvider, Theme, AnimatedSplash overlay
 ├── index.tsx                   # Splash + RoleRouter (redirects based on auth state/role)
 ├── (auth)/
 │   ├── _layout.tsx             # Only accessible when signed out
-│   ├── welcome.tsx
-│   ├── phone-login.tsx
-│   ├── verify-otp.tsx
+│   ├── welcome.tsx             # Stitch "Onboarding": Get started / I already have an account
+│   ├── login.tsx               # Stitch "Customer Login": email or phone + password (customers AND riders)
+│   ├── register.tsx            # Stitch "Registration": customers only
+│   ├── forgot-password.tsx     # Stitch "Forgot Password": email/phone toggle → sends code
+│   ├── reset-password.tsx      # code + new password (same visual language, not in Stitch)
 │   └── complete-profile.tsx
 ├── (customer)/
 │   ├── _layout.tsx             # GUARD: role must be 'customer', else <Redirect href="/" />
@@ -264,7 +279,7 @@ UI guards are for UX only. **Real enforcement is on the server** (Section 7.3).
 ```
 apps/mobile/src/
 ├── api/
-│   ├── client.ts            # axios instance; injects fresh Firebase ID token; 401 → signOut
+│   ├── client.ts            # fetch wrapper; injects session JWT; 401 on an authed request → signOut
 │   ├── auth.api.ts
 │   ├── restaurants.api.ts
 │   ├── orders.api.ts
@@ -287,8 +302,16 @@ apps/mobile/src/
 
 - Server state: **TanStack Query** (cache, retries, refetch on socket events).
 - Client state: **Zustand** (cart, UI prefs).
-- Auth state: React Context (`AuthProvider`) wrapping Firebase `onIdTokenChanged`.
-- Logout: Firebase `signOut()`, `DELETE /users/me/push-token`, clear query cache and cart, disconnect socket (SR07).
+- Auth state: React Context (`AuthProvider`). It holds the token in memory and persists it with `expo-secure-store` (Keychain/Keystore; `localStorage` on web) only when "Remember me" is ticked. Registration and password reset always persist.
+- Logout: clear the stored token, `DELETE /users/me/push-token`, clear query cache and cart, disconnect socket (SR07).
+
+### 5.6 Visual design, splash and motion
+
+- **Design source:** Google Stitch project `15844911321149223708`. Tokens live in `mobile/src/theme/brand.ts`: Plus Jakarta Sans (`@expo-google-fonts/plus-jakarta-sans`), green `#0B4632`, amber `#F5A623`, cream `#FBF9F4`, pill-shaped fields and buttons.
+- **Shared auth UI:** `mobile/src/components/auth/` holds `AuthScreen` (back button, campus pill, keyboard handling), `BrandHeader`, `Field` (animated focus ring, error shake, password toggle), `PrimaryButton`, `GoogleButton`, `Checkbox`, `DropOffSelect` (bottom sheet) and `FormBanner`. Forms validate on the client with the **same zod schemas** the API uses (`packages/shared`), then map server `VALIDATION_ERROR` details back onto fields.
+- **Splash:** the native splash (`app.json`, logo on white) hands over to `components/AnimatedSplash.tsx`, which starts from the same frame. A green circle grows from behind the logo, the tagline rises in, and amber speed lines streak past the logo until `/auth/me` resolves (shown for at least 1.7 s). The overlay then lifts away to reveal the role home.
+- **Motion:** all animation uses `react-native-reanimated` (UI thread). Screen blocks enter with a staggered spring (`components/auth/motion.ts`), buttons spring on press, and `(auth)` screens slide while role groups cross-fade.
+- **Google sign-in:** the buttons are shown as in the design but currently display "coming soon". Planned path: Expo AuthSession (Google) → Firebase credential → `POST /auth/session`. Needs OAuth client IDs.
 
 ---
 
@@ -329,7 +352,7 @@ apps/api/src/
 │   ├── db.ts                 # mongoose connection
 │   └── firebase.ts           # firebase-admin init
 ├── middleware/
-│   ├── authenticate.ts       # verify Firebase ID token → req.user (from Mongo)
+│   ├── authenticate.ts       # backend JWT (by user id) or Firebase ID token (by firebaseUid) → req.user
 │   ├── authorize.ts          # authorize(...roles)
 │   ├── validate.ts           # validate(zodSchema) for body/query/params
 │   ├── idempotency.ts        # Idempotency-Key handling for POST /orders
@@ -396,19 +419,25 @@ Standard codes: `UNAUTHENTICATED (401)`, `FORBIDDEN (403)`, `ACCOUNT_SUSPENDED (
 **Auth**
 | Method | Path | Roles | Purpose |
 |---|---|---|---|
-| POST | `/auth/session` | any signed-in Firebase user | Create/link Mongo user, return user + role |
+| POST | `/auth/register` | public | Customer sign-up (name, email, phone, dropOffPoint, password, confirmPassword, acceptTerms) → `{ user, token, expiresIn }` |
+| POST | `/auth/login` | public | `{ identifier (email or phone), password, rememberMe }` → `{ user, token, expiresIn }` |
+| POST | `/auth/password/forgot` | public | `{ identifier }` → sends a 6-digit code (always 200) |
+| POST | `/auth/password/reset` | public | `{ identifier, code, newPassword, confirmPassword }` → `{ user, token, expiresIn }` |
+| POST | `/auth/session` | any signed-in Firebase user | Admin portal / future Google sign-in: create/link Mongo user, return user + role |
 | GET | `/auth/me` | any | Current user + role (used for routing) |
+
+Rate limits (in-memory, per process): every `/auth/*` route allows 200 requests per IP per 15 min (campus Wi-Fi shares IPs). Per IP **and** account: login 10, forgot 5, reset 15 per 15 min, plus 5 wrong codes per issued code.
 
 **Users / profile**
 | Method | Path | Roles | Purpose |
 |---|---|---|---|
-| PATCH | `/users/me` | customer, rider | Update name/email |
+| PATCH | `/users/me` | customer, rider | Update name/email/dropOffPoint |
 | GET/POST | `/users/me/addresses` | customer | List/add saved addresses |
 | PATCH/DELETE | `/users/me/addresses/:addressId` | customer | Edit/delete address |
 | POST | `/users/me/push-token` | customer, rider | Register Expo/FCM token |
 | DELETE | `/users/me/push-token` | customer, rider | Remove token on logout |
 | GET | `/admin/users?role=&status=` | admin | List users |
-| POST | `/admin/riders` | admin | Pre-create rider (name, phone, vehicleNo) |
+| POST | `/admin/riders` | admin | Pre-create rider (name, phone, vehicleNo, optional password) |
 | PATCH | `/admin/users/:id/status` | admin | Activate/suspend |
 
 **Restaurants & menus**
@@ -463,12 +492,15 @@ Monetary values are stored as **integers in LKR cents** (`Number`), e.g. LKR 1,2
 ```ts
 {
   _id: ObjectId,
-  firebaseUid: string | null,     // unique, sparse (null until a pre-created rider first logs in)
+  firebaseUid: string | null,     // Firebase-authenticated accounts only (admin, future Google); unique when set
   role: 'customer' | 'rider' | 'admin',
   status: 'active' | 'suspended',
   name: string,
   phone: string,                  // E.164, unique
-  email?: string,
+  email?: string,                 // lowercase; unique when present (login identifier)
+  passwordHash?: string | null,   // scrypt, select: false; null = password not set yet
+  passwordReset?: { codeHash, expiresAt, attempts } | null,  // select: false; single-use
+  dropOffPoint?: string | null,   // DROP_OFF_POINTS id from packages/shared (registration)
   addresses: [{                   // customers only
     _id: ObjectId,
     label: string,                // "Hostel", "Boarding"
@@ -482,7 +514,9 @@ Monetary values are stored as **integers in LKR cents** (`Number`), e.g. LKR 1,2
   rider?: { vehicleNo: string, isAvailable: boolean },  // riders only
   pushTokens: string[],
 }
-// Indexes: { firebaseUid: 1 } unique sparse, { phone: 1 } unique, { role: 1, status: 1 }
+// Indexes: { firebaseUid: 1 } unique partial (string only), { phone: 1 } unique,
+//          { email: 1 } unique partial (string only), { role: 1, status: 1 }
+// Partial, not sparse: sparse indexes still index null, so two password-only users would collide.
 ```
 
 ### 8.2 `restaurants`
@@ -623,7 +657,7 @@ Any other transition returns `409 INVALID_STATUS_TRANSITION`. Every transition a
 
 ### 10.1 Socket.IO
 
-- Client connects with `auth: { token: <Firebase ID token> }`; the server verifies it during the handshake and loads the user.
+- Client connects with `auth: { token: <session JWT or Firebase ID token> }`; the server verifies it during the handshake with the same logic as `authenticate` and loads the user.
 - Rooms joined automatically on connect:
   - `user:<userId>` (everyone)
   - `riders` (role rider, active)
@@ -677,14 +711,14 @@ Monitors live orders, can assign/reassign riders, override statuses (audited), m
 | ID                         | Implementation                                                                                                                          |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | SR01 Authentication        | `authenticate` middleware on all routes except `GET /health` and public restaurant reads (optional).                                    |
-| SR02 Password protection   | Delegated to Firebase Auth. Backend never sees or stores passwords.                                                                     |
+| SR02 Password protection   | Mobile: scrypt hashes with per-user salt (`utils/password.ts`), constant-time compare, min 8 chars. Admin: Firebase Auth.              |
 | SR03 RBAC                  | `authorize(...roles)` on every route; admin routes under `/admin/*`.                                                                    |
 | SR04 Record-level access   | Ownership checks in services; rider sees customer contact only when assigned.                                                           |
 | SR05 HTTPS                 | Render/Vercel TLS; mobile uses `https://` and `wss://` only.                                                                            |
 | SR06 Input validation      | zod schemas on body/query/params; Mongo ObjectId validation; strip unknown fields.                                                      |
-| SR07 Session protection    | Firebase ID tokens (1-hour expiry, auto-refresh), stored by Firebase SDK in secure storage; logout clears tokens, cache and push token. |
+| SR07 Session protection    | Backend JWT (1 day, or 30 days with Remember me) in `expo-secure-store`; `JWT_SECRET` is required in production; logout clears token, cache and push token. |
 | SR08 Transaction integrity | All money computed server-side; status machine; COD amount must equal `pricing.total`.                                                  |
-| SR09 Login protection      | Firebase built-in OTP throttling plus `express-rate-limit` on `/auth/*` and `POST /orders`.                                             |
+| SR09 Login protection      | Per IP + account rate limits on login/forgot/reset (`middleware/rateLimit.ts`), 5 wrong codes per reset code, the same error for unknown account and wrong password. |
 | SR10 Activity logging      | `auditLogs` for admin changes, status updates and payment collection; no secrets logged.                                                |
 
 Also: `helmet`, strict CORS (admin domain + no-origin mobile), `mongo-sanitize`, request body size limit (100 kb), secrets only via environment variables.
@@ -752,7 +786,7 @@ NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=
 ```
 
-> Phone OTP with Firebase in React Native requires `@react-native-firebase/auth` and a **development build** (not Expo Go). Use `npx expo prebuild` / EAS dev builds.
+> The mobile app needs no Firebase SDK (credential login goes straight to the API), so it runs in Expo Go. Backend env: set `JWT_SECRET` (16+ characters, **required in production**).
 
 ---
 

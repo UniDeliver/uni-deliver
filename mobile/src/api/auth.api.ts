@@ -1,63 +1,42 @@
 import { apiClient } from './client';
-import { UserDto, UpdateProfileInput } from '@unideliver/shared';
+import type {
+  UserDto,
+  UpdateProfileInput,
+  AuthTokenResponse,
+  ForgotPasswordResponse,
+  RegisterInput,
+  LoginInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+} from '@unideliver/shared';
 
-export interface AuthResponse {
-  user: UserDto;
-}
+const post = <T>(path: string, body: unknown, skipAuth = true) =>
+  apiClient<T>(path, { method: 'POST', body: JSON.stringify(body), skipAuth });
 
 export const authApi = {
-  /**
-   * POST /api/v1/auth/session
-   * Establishes a session from Firebase ID token and returns authenticated user
-   */
-  async session(idToken: string): Promise<AuthResponse> {
-    return apiClient<AuthResponse>('/auth/session', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-      },
-      skipAuth: true,
-    });
-  },
+  /** POST /auth/register: customer self-registration → session */
+  register: (input: RegisterInput) => post<AuthTokenResponse>('/auth/register', input),
 
-  /**
-   * GET /api/v1/auth/me
-   * Fetches current authenticated user profile
-   */
-  async getMe(): Promise<AuthResponse> {
-    return apiClient<AuthResponse>('/auth/me', {
-      method: 'GET',
-    });
-  },
+  /** POST /auth/login: email or phone + password → session */
+  login: (input: LoginInput) => post<AuthTokenResponse>('/auth/login', input),
 
-  /**
-   * PATCH /api/v1/users/me
-   * Updates name/email (complete profile)
-   */
-  async updateMe(input: UpdateProfileInput): Promise<AuthResponse> {
-    return apiClient<AuthResponse>('/users/me', {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    });
-  },
+  /** POST /auth/password/forgot: sends a 6-digit reset code */
+  forgotPassword: (input: ForgotPasswordInput) => post<ForgotPasswordResponse>('/auth/password/forgot', input),
 
-  /**
-   * POST /api/v1/users/me/push-token
-   */
-  async registerPushToken(token: string): Promise<{ message: string }> {
-    return apiClient<{ message: string }>('/users/me/push-token', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    });
-  },
+  /** POST /auth/password/reset: code + new password → session */
+  resetPassword: (input: ResetPasswordInput) => post<AuthTokenResponse>('/auth/password/reset', input),
 
-  /**
-   * DELETE /api/v1/users/me/push-token
-   */
-  async removePushToken(token: string): Promise<{ message: string }> {
-    return apiClient<{ message: string }>('/users/me/push-token', {
-      method: 'DELETE',
-      body: JSON.stringify({ token }),
-    });
-  },
+  /** GET /auth/me: authoritative user + role, used for routing on app start */
+  getMe: () => apiClient<{ user: UserDto }>('/auth/me', { method: 'GET' }),
+
+  /** PATCH /users/me */
+  updateMe: (input: UpdateProfileInput) =>
+    apiClient<{ user: UserDto }>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
+
+  /** POST /users/me/push-token */
+  registerPushToken: (token: string) => post<{ message: string }>('/users/me/push-token', { token }, false),
+
+  /** DELETE /users/me/push-token */
+  removePushToken: (token: string) =>
+    apiClient<{ message: string }>('/users/me/push-token', { method: 'DELETE', body: JSON.stringify({ token }) }),
 };
