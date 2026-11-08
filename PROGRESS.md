@@ -2,7 +2,9 @@
 
 **Group 07 · IS5109 Community Project** · Based on *Uni Deliver Implementation Guide (7 Oct 2026)*
 
-> **Last updated:** 2026-11-08 by T. Saruhasan · **Branch:** `feature/auth` · **Latest commit:** `25c1bf8`
+> **Last updated:** 2026-11-08 by T. Saruhasan · **Branch:** `develop` · **Latest commit:** `02ee6d0`
+>
+> **Branching:** work on `feature/<TASK-ID>-<name>` branches cut from `develop` (e.g. `feature/SAR-3-profiles`), open PRs into `develop`, partner reviews. `main` only receives release merges from `develop`. Details in [SETUP.md](SETUP.md#branching).
 
 This file is the single place to see **what is done, what is next and who owns it**. It mirrors the
 36 work packages (6 members × 6 phases) from the implementation guide.
@@ -812,4 +814,5 @@ Newest first. One line per update: date · who · what changed.
 
 | Date | Who | Change |
 | --- | --- | --- |
+| 2026-11-08 | T. Saruhasan | Created `develop` branch from `main` (after PR #2 merged `feature/auth`); docs now point to `develop` and describe the feature-branch workflow. |
 | 2026-11-08 | T. Saruhasan | Created tracker from the implementation guide and recorded current repository state (auth, mobile shell, admin login, onboarding UI). Added `SETUP.md`. |
