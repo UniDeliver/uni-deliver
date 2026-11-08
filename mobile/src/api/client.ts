@@ -1,6 +1,20 @@
+import Constants from 'expo-constants';
 import { ApiResponse } from '@unideliver/shared';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+const API_PORT = 4000;
+
+/**
+ * EXPO_PUBLIC_API_URL wins when set (staging/prod builds). In development, a phone can't reach
+ * the Mac via "localhost", so reuse the LAN host Metro is serving from (e.g. 192.168.x.x:8081).
+ */
+function resolveApiBaseUrl(): string {
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (__DEV__ && devHost) return `http://${devHost}:${API_PORT}/api/v1`;
+  return `http://localhost:${API_PORT}/api/v1`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 let tokenGetter: (() => Promise<string | null>) | null = null;
 let onUnauthorizedCallback: (() => void) | null = null;
