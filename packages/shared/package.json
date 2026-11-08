@@ -1,0 +1,12 @@
+{
+  "name": "@unideliver/shared",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
